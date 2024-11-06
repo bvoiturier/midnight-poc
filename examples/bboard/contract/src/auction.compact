@@ -1,0 +1,71 @@
+include "std";
+
+export enum STATE { opened, concluded }
+
+export ledger state: Cell<STATE>;
+export ledger description: Cell<Opaque<"string">>;
+export ledger startingBid: Cell<Uint<32>>;
+export ledger currentBid: Cell<Uint<32>>;
+export ledger reservePrice: Cell<Uint<32>>;
+export ledger seller: Cell<Bytes<32>>;
+
+constructor(_description: Opaque<"string">, _startingBid: Uint<32>, _reservePrice: Uint<32>) {
+    state = STATE.opened;
+    currentBid = 0;
+    description = _description;
+    startingBid = _startingBid;    
+    reservePrice = _reservePrice; // How can we keep this one private???
+    seller = public_key(local_secret_key());
+}
+
+witness local_secret_key(): Bytes<32>;
+
+export circuit placeBid(bid: Uint<32>): Void {
+    assert state == STATE.opened
+        "Attempted to bid on a concluded auction";
+    
+    assert bid >= startingBid
+        "The bid should be equal to or greater than the 'starting bid'";
+    
+    assert bid >= (currentBid + 500) 
+        "The bid should be equal to or greater than the 'current bid + 500$'";
+
+    //assert seller != public_key(local_secret_key())
+    //    "Attempted to place a bid as the seller";
+    
+    //assert birthDateFromVC >= 18
+    //    "The bidder's age must be equal to or greater than 18"
+
+    if (bid >= reservePrice) // reservePrice should be private state!
+        state == STATE.concluded;
+}
+
+export circuit concludeBid(): Void {
+    assert state == STATE.opened
+        "Attempted to conclude an already concluded auction";
+
+    assert seller == public_key(local_secret_key())
+        "Only the seller can conclude the auction";
+    
+    state == STATE.concluded;
+}
+
+export circuit public_key(sk: Bytes<32>): Bytes<32> {
+    return persistent_hash<Vector<2, Bytes<32>>>([pad(32, "auction:seller:pk"), sk]);
+}
+
+/*
+Auction Smart Contract:
+
+The initial state of the contract will contain:
+    Public: A description of the item which is put on sale
+    Public: The minimal starting bid
+    Public: The last validated bid (empty)
+    Private: The reserve price defined by the seller at which the auction is automatically concluded when reached or surpassed
+The rules are:
+    The bidder should be over 18 and prove it with a JWT VC
+    The bid should be equal to or higher than the starting bid
+    The bid should be higher than the previous bid by at least 500$
+    The auction is automatically concluded/closed if the bid is equal to or higher than the reserve price
+*/
+
