@@ -3,7 +3,7 @@
  * as well as the single witness function that accesses it.
  */
 
-import { Ledger } from './managed/bboard/contract/index.cjs';
+import { Ledger } from './managed/auction/contract/index.cjs';
 import { WitnessContext } from '@midnight-ntwrk/compact-runtime';
 
 /* **********************************************************************
@@ -14,12 +14,12 @@ import { WitnessContext } from '@midnight-ntwrk/compact-runtime';
  * make an object of that type.
  */
 
-export type BBoardPrivateState = {
+export type AuctionPrivateState = {
   // EXERCISE 1a: FILL IN A REPRESENTATION OF THE PRIVATE STATE
   readonly secretKey: Uint8Array;
 };
 
-export const createBBoardPrivateState = (secretKey: Uint8Array) => ({
+export const createAuctionPrivateState = (secretKey: Uint8Array) => ({
   // EXERCISE 1b: INITIALIZE THE OBJECT OF TYPE BBoardPrivateState
   secretKey,
 });
@@ -52,7 +52,7 @@ export const createBBoardPrivateState = (secretKey: Uint8Array) => ({
  * only the binding for the privateState in scope.
  */
 export const witnesses = {
-  local_secret_key: ({ privateState }: WitnessContext<Ledger, BBoardPrivateState>): [BBoardPrivateState, Uint8Array] => [
+  local_secret_key: ({ privateState }: WitnessContext<Ledger, AuctionPrivateState>): [AuctionPrivateState, Uint8Array] => [
     // EXERCISE 2: WHAT ARE THE CORRECT TWO VALUES TO RETURN HERE?
     privateState,
     privateState.secretKey,
