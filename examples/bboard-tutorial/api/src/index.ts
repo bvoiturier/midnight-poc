@@ -6,11 +6,11 @@
 
 import { type ContractAddress, convert_bigint_to_Uint8Array } from '@midnight-ntwrk/compact-runtime';
 import { type Logger } from 'pino';
-import type { BBoardDerivedState, BBoardContract, BBoardProviders, DeployedBBoardContract } from './common-types.js';
+import type { AuctionDerivedState, AuctionContract, AuctionProviders, DeployedAuctionContract } from './common-types.js';
 import {
-  type BBoardPrivateState,
+  type AuctionPrivateState,
   Contract,
-  createBBoardPrivateState,
+  createAuctionPrivateState,
   ledger,
   pureCircuits,
   witnesses,
@@ -22,26 +22,26 @@ import { combineLatest, map, tap, from, type Observable } from 'rxjs';
 import { toHex } from '@midnight-ntwrk/midnight-js-utils';
 
 /** @internal */
-const bboardContractInstance: BBoardContract = new Contract(witnesses);
+const auctionContractInstance: AuctionContract = new Contract(witnesses);
 
 /**
  * An API for a deployed bulletin board.
  */
-export interface DeployedBBoardAPI {
+export interface DeployedAuctionAPI {
   readonly deployedContractAddress: ContractAddress;
-  readonly state$: Observable<BBoardDerivedState>;
+  readonly state$: Observable<AuctionDerivedState>;
 
-  post: (message: string) => Promise<void>;
-  takeDown: () => Promise<void>;
+  placeBid: (bid: bigint) => Promise<void>;
+  concludeAuction: () => Promise<void>;
 }
 
 /**
- * Provides an implementation of {@link DeployedBBoardAPI} by adapting a deployed bulletin board
+ * Provides an implementation of {@link DeployedAuctionAPI} by adapting a deployed bulletin board
  * contract.
  *
  * @remarks
- * The `BBoardPrivateState` is managed at the DApp level by a private state provider. As such, this
- * private state is shared between all instances of {@link BBoardAPI}, and their underlying deployed
+ * The `AuctionPrivateState` is managed at the DApp level by a private state provider. As such, this
+ * private state is shared between all instances of {@link AuctionAPI}, and their underlying deployed
  * contracts. The private state defines a `'secretKey'` property that effectively identifies the current
  * user, and is used to determine if the current user is the poster of the message as the observable
  * contract state changes.
@@ -51,12 +51,12 @@ export interface DeployedBBoardAPI {
  * the deployed bulletin board contracts, and allows for a unique secret key to be generated for each bulletin
  * board that the user interacts with.
  */
-// TODO: Update BBoardAPI to use contract level private state storage.
-export class BBoardAPI implements DeployedBBoardAPI {
+// TODO: Update AuctionAPI to use contract level private state storage.
+export class AuctionAPI implements DeployedAuctionAPI {
   /** @internal */
   private constructor(
-    public readonly deployedContract: DeployedBBoardContract,
-    providers: BBoardProviders,
+    public readonly deployedContract: DeployedAuctionContract,
+    providers: AuctionProviders,
     private readonly logger?: Logger,
   ) {
     this.deployedContractAddress = deployedContract.deployTxData.public.contractAddress;
@@ -70,8 +70,8 @@ export class BBoardAPI implements DeployedBBoardAPI {
               ledgerStateChanged: {
                 ledgerState: {
                   ...ledgerState,
-                  state: ledgerState.state === STATE.occupied ? 'occupied' : 'vacant',
-                  poster: toHex(ledgerState.poster),
+                  state: ledgerState.auctionState === STATE.concluded ? 'concluded' : 'opened',
+                  seller: toHex(ledgerState.itemSeller),
                 },
               },
             }),
@@ -81,20 +81,24 @@ export class BBoardAPI implements DeployedBBoardAPI {
         //    since the private state of the bulletin board application never changes, we can query the
         //    private state once and always use the same value with `combineLatest`. In applications
         //    where the private state is expected to change, we would need to make this an `Observable`.
-        from(providers.privateStateProvider.get('bboardPrivateState') as Promise<BBoardPrivateState>),
+        from(providers.privateStateProvider.get('auctionPrivateState') as Promise<AuctionPrivateState>),
       ],
       // ...and combine them to produce the required derived state.
       (ledgerState, privateState) => {
         const hashedSecretKey = pureCircuits.public_key(
           privateState.secretKey,
-          convert_bigint_to_Uint8Array(32, ledgerState.instance),
         );
 
         return {
-          state: ledgerState.state,
-          message: ledgerState.message.value,
-          instance: ledgerState.instance,
-          isOwner: toHex(ledgerState.poster) === toHex(hashedSecretKey),
+          auction_state: ledgerState.auctionState,
+          item_description: ledgerState.itemDescription,
+          minimum_bid: ledgerState.minimumBid,
+          bid_increment: ledgerState.bidIncrement,
+          current_bid: ledgerState.currentBid.value,
+          current_bidder: ledgerState.currentBidder.value,
+          reserve_price: ledgerState.reservePrice,
+          item_seller: ledgerState.itemSeller,
+          isSeller: toHex(ledgerState.itemSeller) === toHex(hashedSecretKey),
         };
       },
     );
@@ -109,7 +113,7 @@ export class BBoardAPI implements DeployedBBoardAPI {
    * Gets an observable stream of state changes based on the current public (ledger),
    * and private state data.
    */
-  readonly state$: Observable<BBoardDerivedState>;
+  readonly state$: Observable<AuctionDerivedState>;
 
   /**
    * Attempts to post a given message to the bulletin board.
@@ -119,17 +123,17 @@ export class BBoardAPI implements DeployedBBoardAPI {
    * @remarks
    * This method can fail during local circuit execution if the bulletin board is currently occupied.
    */
-  async post(message: string): Promise<void> {
-    this.logger?.info(`postingMessage: ${message}`);
+  async placeBid(bid: bigint): Promise<void> {
+    this.logger?.info(`placing bid: ${bid}`);
 
     const txData =
       // EXERCISE 3: CALL THE post CIRCUIT AND SUBMIT THE TRANSACTION TO THE NETWORK
       await this.deployedContract.callTx // EXERCISE ANSWER
-        .post(message); // EXERCISE ANSWER
+        .place_bid(bid); // EXERCISE ANSWER
 
     this.logger?.trace({
       transactionAdded: {
-        circuit: 'post',
+        circuit: 'place_bid',
         txHash: txData.public.txHash,
         blockHeight: txData.public.blockHeight,
       },
@@ -144,17 +148,17 @@ export class BBoardAPI implements DeployedBBoardAPI {
    * or if the currently posted message isn't owned by the poster computed from the current private
    * state.
    */
-  async takeDown(): Promise<void> {
-    this.logger?.info('takingDownMessage');
+  async concludeAuction(): Promise<void> {
+    this.logger?.info('concluding auction');
 
     const txData =
       // EXERCISE 4: CALL THE take_down CIRCUIT AND SUBMIT THE TRANSACTION TO THE NETWORK
       await this.deployedContract.callTx // EXERCISE ANSWER
-        .take_down(); // EXERCISE ANSWER
+        .conclude_auction(); // EXERCISE ANSWER
 
     this.logger?.trace({
       transactionAdded: {
-        circuit: 'take_down',
+        circuit: 'conclude_auction',
         txHash: txData.public.txHash,
         blockHeight: txData.public.blockHeight,
       },
@@ -166,27 +170,28 @@ export class BBoardAPI implements DeployedBBoardAPI {
    *
    * @param providers The bulletin board providers.
    * @param logger An optional 'pino' logger to use for logging.
-   * @returns A `Promise` that resolves with a {@link BBoardAPI} instance that manages the newly deployed
-   * {@link DeployedBBoardContract}; or rejects with a deployment error.
+   * @returns A `Promise` that resolves with a {@link AuctionAPI} instance that manages the newly deployed
+   * {@link DeployedAuctionContract}; or rejects with a deployment error.
    */
-  static async deploy(providers: BBoardProviders, logger?: Logger): Promise<BBoardAPI> {
+  static async deploy(providers: AuctionProviders, args: [_item_description: string, _minimum_bid: bigint, _bid_increment: bigint, _reserve_price: bigint], logger?: Logger): Promise<AuctionAPI> {
     logger?.info('deployContract');
 
     // EXERCISE 5: FILL IN THE CORRECT ARGUMENTS TO deployContract
-    const deployedBBoardContract = await deployContract(providers, {
+    const deployedAuctionContract = await deployContract(providers, {
       // EXERCISE ANSWER
-      privateStateKey: 'bboardPrivateState', // EXERCISE ANSWER
-      contract: bboardContractInstance,
-      initialPrivateState: await BBoardAPI.getPrivateState(providers), // EXERCISE ANSWER
+      privateStateKey: 'auctionPrivateState', // EXERCISE ANSWER
+      contract: auctionContractInstance,
+      initialPrivateState: await AuctionAPI.getPrivateState(providers),
+      args: args
     });
 
     logger?.trace({
       contractDeployed: {
-        finalizedDeployTxData: deployedBBoardContract.deployTxData.public,
+        finalizedDeployTxData: deployedAuctionContract.deployTxData.public,
       },
     });
 
-    return new BBoardAPI(deployedBBoardContract, providers, logger);
+    return new AuctionAPI(deployedAuctionContract, providers, logger);
   }
 
   /**
@@ -195,35 +200,35 @@ export class BBoardAPI implements DeployedBBoardAPI {
    * @param providers The bulletin board providers.
    * @param contractAddress The contract address of the deployed bulletin board contract to search for and join.
    * @param logger An optional 'pino' logger to use for logging.
-   * @returns A `Promise` that resolves with a {@link BBoardAPI} instance that manages the joined
-   * {@link DeployedBBoardContract}; or rejects with an error.
+   * @returns A `Promise` that resolves with a {@link AuctionAPI} instance that manages the joined
+   * {@link DeployedAuctionContract}; or rejects with an error.
    */
-  static async join(providers: BBoardProviders, contractAddress: ContractAddress, logger?: Logger): Promise<BBoardAPI> {
+  static async join(providers: AuctionProviders, contractAddress: ContractAddress, logger?: Logger): Promise<AuctionAPI> {
     logger?.info({
       joinContract: {
         contractAddress,
       },
     });
 
-    const deployedBBoardContract = await findDeployedContract(providers, {
+    const deployedAuctionContract = await findDeployedContract(providers, {
       contractAddress,
-      contract: bboardContractInstance,
-      privateStateKey: 'bboardPrivateState',
-      initialPrivateState: await BBoardAPI.getPrivateState(providers),
+      contract: auctionContractInstance,
+      privateStateKey: 'auctionPrivateState',
+      initialPrivateState: await AuctionAPI.getPrivateState(providers),
     });
 
     logger?.trace({
       contractJoined: {
-        finalizedDeployTxData: deployedBBoardContract.deployTxData.public,
+        finalizedDeployTxData: deployedAuctionContract.deployTxData.public,
       },
     });
 
-    return new BBoardAPI(deployedBBoardContract, providers, logger);
+    return new AuctionAPI(deployedAuctionContract, providers, logger);
   }
 
-  private static async getPrivateState(providers: BBoardProviders): Promise<BBoardPrivateState> {
-    const existingPrivateState = await providers.privateStateProvider.get('bboardPrivateState');
-    return existingPrivateState ?? createBBoardPrivateState(utils.randomBytes(32));
+  private static async getPrivateState(providers: AuctionProviders): Promise<AuctionPrivateState> {
+    const existingPrivateState = await providers.privateStateProvider.get('auctionPrivateState');
+    return existingPrivateState ?? createAuctionPrivateState(utils.randomBytes(32));
   }
 }
 

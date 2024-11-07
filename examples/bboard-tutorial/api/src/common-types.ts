@@ -6,7 +6,7 @@
 
 import { type MidnightProviders } from '@midnight-ntwrk/midnight-js-types';
 import { type FoundContract } from '@midnight-ntwrk/midnight-js-contracts';
-import type { STATE, BBoardPrivateState, Contract, Witnesses } from '@midnight-ntwrk/bboard-contract-tutorial';
+import type { STATE, AuctionPrivateState, Contract, Witnesses } from '@midnight-ntwrk/bboard-contract-tutorial';
 
 /**
  * The private states consumed throughout the application.
@@ -26,9 +26,9 @@ import type { STATE, BBoardPrivateState, Contract, Witnesses } from '@midnight-n
  */
 export type PrivateStates = {
   /**
-   * Key used to provide the private state for {@link BBoardContract} deployments.
+   * Key used to provide the private state for {@link AuctionContract} deployments.
    */
-  readonly bboardPrivateState: BBoardPrivateState;
+  readonly auctionPrivateState: AuctionPrivateState;
 };
 
 /**
@@ -36,44 +36,49 @@ export type PrivateStates = {
  *
  * @public
  */
-export type BBoardContract = Contract<BBoardPrivateState, Witnesses<BBoardPrivateState>>;
+export type AuctionContract = Contract<AuctionPrivateState, Witnesses<AuctionPrivateState>>;
 
 /**
- * The keys of the circuits exported from {@link BBoardContract}.
+ * The keys of the circuits exported from {@link AuctionContract}.
  *
  * @public
  */
-export type BBoardCircuitKeys = Exclude<keyof BBoardContract['impureCircuits'], number | symbol>;
+export type AuctionCircuitKeys = Exclude<keyof AuctionContract['impureCircuits'], number | symbol>;
 
 /**
- * The providers required by {@link BBoardContract}.
+ * The providers required by {@link AuctionContract}.
  *
  * @public
  */
-export type BBoardProviders = MidnightProviders<BBoardCircuitKeys, PrivateStates>;
+export type AuctionProviders = MidnightProviders<AuctionCircuitKeys, PrivateStates>;
 
 /**
- * A {@link BBoardContract} that has been deployed to the network.
+ * A {@link AuctionContract} that has been deployed to the network.
  *
  * @public
  */
-export type DeployedBBoardContract = FoundContract<BBoardPrivateState, BBoardContract>;
+export type DeployedAuctionContract = FoundContract<AuctionPrivateState, AuctionContract>;
 
 /**
  * A type that represents the derived combination of public (or ledger), and private state.
  */
-export type BBoardDerivedState = {
-  readonly state: STATE;
-  readonly instance: bigint;
-  readonly message: string | undefined;
+export type AuctionDerivedState = {
+  readonly auction_state: STATE;
+  readonly item_description: string;
+  readonly minimum_bid: bigint;
+  readonly bid_increment: bigint;
+  readonly current_bid: bigint | undefined;
+  readonly current_bidder: Uint8Array | undefined;
+  readonly reserve_price: bigint;
+  readonly item_seller: Uint8Array;
 
   /**
    * A readonly flag that determines if the current message was posted by the current user.
    *
    * @remarks
    * The `poster` property of the public (or ledger) state is the public key of the message poster, while
-   * the `secretKey` property of {@link BBoardPrivateState} is the secret key of the current user. If
+   * the `secretKey` property of {@link AuctionPrivateState} is the secret key of the current user. If
    * `poster` corresponds to `secretKey`, then `isOwner` is `true`.
    */
-  readonly isOwner: boolean;
+  readonly isSeller: boolean;
 };
