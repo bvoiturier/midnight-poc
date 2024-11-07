@@ -11,12 +11,12 @@ import { stdin as input, stdout as output } from 'node:process';
 import { WebSocket } from 'ws';
 import { webcrypto } from 'crypto';
 import {
-  type BBoardProviders,
+  type AuctionProviders,
   type PrivateStates,
-  BBoardAPI,
+  AuctionAPI,
   utils,
-  type BBoardDerivedState,
-  type DeployedBBoardContract,
+  type AuctionDerivedState,
+  type DeployedAuctionContract,
 } from '@midnight-ntwrk/bboard-api-tutorial';
 import { ledger, type Ledger, STATE } from '@midnight-ntwrk/bboard-contract-tutorial';
 import {
@@ -58,7 +58,7 @@ globalThis.WebSocket = WebSocket;
  */
 
 export const getBBoardLedgerState = (
-  providers: BBoardProviders,
+  providers: AuctionProviders,
   contractAddress: ContractAddress,
 ): Promise<Ledger | null> =>
   providers.publicDataProvider
@@ -73,25 +73,40 @@ export const getBBoardLedgerState = (
 
 const DEPLOY_OR_JOIN_QUESTION = `
 You can do one of the following:
-  1. Deploy a new bulletin board contract
-  2. Join an existing bulletin board contract
+  1. Deploy a new auction contract
+  2. Join an existing auction contract
   3. Exit
 Which would you like to do? `;
 
-const deployOrJoin = async (providers: BBoardProviders, rli: Interface, logger: Logger): Promise<BBoardAPI | null> => {
-  let api: BBoardAPI | null = null;
+const deployOrJoin = async (providers: AuctionProviders, rli: Interface, logger: Logger): Promise<AuctionAPI | null> => {
+  let api: AuctionAPI | null = null;
 
   while (true) {
     const choice = await rli.question(DEPLOY_OR_JOIN_QUESTION);
     switch (choice) {
       case '1':
-        api = await BBoardAPI.deploy(providers, logger);
-        logger.info(`Deployed contract at address: ${api.deployedContractAddress}`);
-        return api;
+        const item_description = await rli.question("What is item description? ");
+        const minimum_bid = BigInt(await rli.question("What is the minimum bid? "));
+        const bid_increment = BigInt(await rli.question("What is the bid increment? "));
+        const reserve_price = BigInt(await rli.question("What is the reserve price at which the auction is automatically concluded? "));
+        
+        try {
+          api = await AuctionAPI.deploy(providers, [item_description, minimum_bid, bid_increment, reserve_price], logger);
+          logger.info(`Deployed contract at address: ${api.deployedContractAddress}`);
+          return api;
+        } catch (error) {
+          logger.error(`Failed to deploy the contract: ${error}`);
+          break;
+        }
       case '2':
-        api = await BBoardAPI.join(providers, await rli.question('What is the contract address (in hex)? '), logger);
-        logger.info(`Joined contract at address: ${api.deployedContractAddress}`);
-        return api;
+        try {
+          api = await AuctionAPI.join(providers, await rli.question('What is the contract address (in hex)? '), logger);
+          logger.info(`Joined contract at address: ${api.deployedContractAddress}`);
+          return api;
+        } catch (error) {
+          logger.error(`Failed to join the contract: ${error}`);
+          break;
+        }
       case '3':
         logger.info('Exiting...');
         return null;
@@ -107,8 +122,8 @@ const deployOrJoin = async (providers: BBoardProviders, rli: Interface, logger: 
  */
 
 const displayLedgerState = async (
-  providers: BBoardProviders,
-  deployedBBoardContract: DeployedBBoardContract,
+  providers: AuctionProviders,
+  deployedBBoardContract: DeployedAuctionContract,
   logger: Logger,
 ): Promise<void> => {
   const contractAddress = deployedBBoardContract.deployTxData.public.contractAddress;
@@ -116,12 +131,15 @@ const displayLedgerState = async (
   if (ledgerState === null) {
     logger.info(`There is no bulletin board contract deployed at ${contractAddress}`);
   } else {
-    const boardState = ledgerState.state === STATE.occupied ? 'occupied' : 'vacant';
-    const latestMessage = !ledgerState.message.is_some ? 'none' : ledgerState.message.value;
-    logger.info(`Current state is: '${boardState}'`);
-    logger.info(`Current message is: '${latestMessage}'`);
-    logger.info(`Current instance is: ${ledgerState.instance}`);
-    logger.info(`Current poster is: '${toHex(ledgerState.poster)}'`);
+    const auctionState = ledgerState.auctionState === STATE.concluded ? 'concluded' : 'opened';
+    logger.info(`Auction state: '${auctionState}'`);
+    logger.info(`Item description is: '${ledgerState.itemDescription}'`);
+    logger.info(`Minimum bid is: '${ledgerState.minimumBid}'`);
+    logger.info(`Bid increment is: '${ledgerState.bidIncrement}'`);
+    logger.info(`Current bid is: '${ledgerState.currentBid}'`);
+    logger.info(`Current bidder is: '${ledgerState.currentBidder}'`);
+    logger.info(`Reserve price is: '${ledgerState.reservePrice}'`);
+    logger.info(`Item seller is: '${toHex(ledgerState.itemSeller)}'`);
   }
 };
 
@@ -129,8 +147,8 @@ const displayLedgerState = async (
  * displayPrivateState: shows the hex-formatted value of the secret key.
  */
 
-const displayPrivateState = async (providers: BBoardProviders, logger: Logger): Promise<void> => {
-  const privateState = await providers.privateStateProvider.get('bboardPrivateState');
+const displayPrivateState = async (providers: AuctionProviders, logger: Logger): Promise<void> => {
+  const privateState = await providers.privateStateProvider.get('auctionPrivateState');
   if (privateState === null) {
     logger.info(`There is no existing bulletin board private state`);
   } else {
@@ -145,16 +163,20 @@ const displayPrivateState = async (providers: BBoardProviders, logger: Logger): 
  * determine if the current user is the poster of the current message.
  */
 
-const displayDerivedState = (ledgerState: BBoardDerivedState | undefined, logger: Logger) => {
+const displayDerivedState = (ledgerState: AuctionDerivedState | undefined, logger: Logger) => {
   if (ledgerState === undefined) {
     logger.info(`No bulletin board state currently available`);
   } else {
-    const boardState = ledgerState.state === STATE.occupied ? 'occupied' : 'vacant';
-    const latestMessage = ledgerState.state === STATE.occupied ? ledgerState.message : 'none';
-    logger.info(`Current state is: '${boardState}'`);
-    logger.info(`Current message is: '${latestMessage}'`);
-    logger.info(`Current instance is: ${ledgerState.instance}`);
-    logger.info(`Current poster is: '${ledgerState.isOwner ? 'you' : 'not you'}'`);
+    const auctionState = ledgerState.auction_state === STATE.concluded ? 'concluded' : 'opened';
+    logger.info(`Auction state: '${auctionState}'`);
+    logger.info(`Item description is: '${ledgerState.item_description}'`);
+    logger.info(`Minimum bid is: '${ledgerState.minimum_bid}'`);
+    logger.info(`Bid increment is: '${ledgerState.bid_increment}'`);
+    logger.info(`Current bid is: '${ledgerState.current_bid}'`);
+    logger.info(`Current bidder is: '${ledgerState.current_bidder}'`);
+    logger.info(`Reserve price is: '${ledgerState.reserve_price}'`);
+    logger.info(`Item seller is: '${toHex(ledgerState.item_seller)}'`);
+    logger.info(`Item seller is: '${ledgerState.isSeller ? 'you' : 'not you'}'`);
   }
 };
 
@@ -166,38 +188,46 @@ const displayDerivedState = (ledgerState: BBoardDerivedState | undefined, logger
 
 const MAIN_LOOP_QUESTION = `
 You can do one of the following:
-  1. Post a message
-  2. Take down your message
+  1. Place a bid
+  2. Conclude the auction with the current bid
   3. Display the current ledger state (known by everyone)
   4. Display the current private state (known only to this DApp instance)
   5. Display the current derived state (known only to this DApp instance)
   6. Exit
 Which would you like to do? `;
 
-const mainLoop = async (providers: BBoardProviders, rli: Interface, logger: Logger): Promise<void> => {
-  const bboardApi = await deployOrJoin(providers, rli, logger);
-  if (bboardApi === null) {
+const mainLoop = async (providers: AuctionProviders, rli: Interface, logger: Logger): Promise<void> => {
+  const auctionApi = await deployOrJoin(providers, rli, logger);
+  if (auctionApi === null) {
     return;
   }
-  let currentState: BBoardDerivedState | undefined;
+  let currentState: AuctionDerivedState | undefined;
   const stateObserver = {
-    next: (state: BBoardDerivedState) => (currentState = state),
+    next: (state: AuctionDerivedState) => (currentState = state),
   };
-  const subscription = bboardApi.state$.subscribe(stateObserver);
+  const subscription = auctionApi.state$.subscribe(stateObserver);
   try {
     while (true) {
       const choice = await rli.question(MAIN_LOOP_QUESTION);
       switch (choice) {
         case '1': {
-          const message = await rli.question(`What message do you want to post? `);
-          await bboardApi.post(message);
+          const answer = await rli.question(`What price would you like to set for your bid? `);
+          try {
+            await auctionApi.placeBid(BigInt(answer));
+          } catch(error ) {
+            logger.error(`Failed to place bid: ${error}`);
+          }
           break;
         }
         case '2':
-          await bboardApi.takeDown();
+          try {
+            await auctionApi.concludeAuction();
+          } catch(error ) {
+            logger.error(`Failed to conclude bid: ${error}`);
+          }
           break;
         case '3':
-          await displayLedgerState(providers, bboardApi.deployedContract, logger);
+          await displayLedgerState(providers, auctionApi.deployedContract, logger);
           break;
         case '4':
           await displayPrivateState(providers, logger);
@@ -396,7 +426,7 @@ export const run = async (config: Config, logger: Logger, dockerEnv?: DockerComp
           privateStateStoreName: config.privateStateStoreName,
         }),
         publicDataProvider: indexerPublicDataProvider(config.indexer, config.indexerWS),
-        zkConfigProvider: new NodeZkConfigProvider<'post' | 'take_down'>(config.zkConfigPath),
+        zkConfigProvider: new NodeZkConfigProvider<'place_bid' | 'conclude_auction'>(config.zkConfigPath),
         proofProvider: httpClientProofProvider(config.proofServer),
         walletProvider: walletAndMidnightProvider,
         midnightProvider: walletAndMidnightProvider,
