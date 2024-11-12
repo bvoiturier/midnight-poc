@@ -181,7 +181,7 @@ export class AuctionAPI implements DeployedAuctionAPI {
       // EXERCISE ANSWER
       privateStateKey: 'auctionPrivateState', // EXERCISE ANSWER
       contract: auctionContractInstance,
-      initialPrivateState: await AuctionAPI.getPrivateState(providers),
+      initialPrivateState: await AuctionAPI.getPrivateState(providers, logger),
       args: args
     });
 
@@ -214,7 +214,7 @@ export class AuctionAPI implements DeployedAuctionAPI {
       contractAddress,
       contract: auctionContractInstance,
       privateStateKey: 'auctionPrivateState',
-      initialPrivateState: await AuctionAPI.getPrivateState(providers),
+      initialPrivateState: await AuctionAPI.getPrivateState(providers, logger),
     });
 
     logger?.trace({
@@ -226,9 +226,12 @@ export class AuctionAPI implements DeployedAuctionAPI {
     return new AuctionAPI(deployedAuctionContract, providers, logger);
   }
 
-  private static async getPrivateState(providers: AuctionProviders): Promise<AuctionPrivateState> {
+  private static async getPrivateState(providers: AuctionProviders, logger?: Logger): Promise<AuctionPrivateState> {
     const existingPrivateState = await providers.privateStateProvider.get('auctionPrivateState');
-    return existingPrivateState ?? createAuctionPrivateState(utils.randomBytes(32));
+    logger?.info(`Existing 'auctionPrivateState' found: ${existingPrivateState ? 'yes' : 'no'}`);
+    const privateState = existingPrivateState ?? createAuctionPrivateState(utils.randomBytes(32));
+    logger?.info(`Private state 'secret key': ${toHex(privateState.secretKey)}`);
+    return privateState;
   }
 }
 
