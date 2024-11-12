@@ -132,12 +132,14 @@ const displayLedgerState = async (
     logger.info(`There is no bulletin board contract deployed at ${contractAddress}`);
   } else {
     const auctionState = ledgerState.auctionState === STATE.concluded ? 'concluded' : 'opened';
+    const currentBid = ledgerState.currentBid.is_some ? ledgerState.currentBid.value : 'none';
+    const currentBidder = ledgerState.currentBidder.is_some ? toHex(ledgerState.currentBidder.value) : 'none';
     logger.info(`Auction state: '${auctionState}'`);
     logger.info(`Item description is: '${ledgerState.itemDescription}'`);
     logger.info(`Minimum bid is: '${ledgerState.minimumBid}'`);
     logger.info(`Bid increment is: '${ledgerState.bidIncrement}'`);
-    logger.info(`Current bid is: '${ledgerState.currentBid}'`);
-    logger.info(`Current bidder is: '${ledgerState.currentBidder}'`);
+    logger.info(`Current bid is: '${currentBid}'`);
+    logger.info(`Current bidder is: '${currentBidder}'`);
     logger.info(`Reserve price is: '${ledgerState.reservePrice}'`);
     logger.info(`Item seller is: '${toHex(ledgerState.itemSeller)}'`);
   }
@@ -168,12 +170,13 @@ const displayDerivedState = (ledgerState: AuctionDerivedState | undefined, logge
     logger.info(`No bulletin board state currently available`);
   } else {
     const auctionState = ledgerState.auction_state === STATE.concluded ? 'concluded' : 'opened';
+    const currentBidder = ledgerState.current_bidder ? toHex(ledgerState.current_bidder) : 'none';
     logger.info(`Auction state: '${auctionState}'`);
     logger.info(`Item description is: '${ledgerState.item_description}'`);
     logger.info(`Minimum bid is: '${ledgerState.minimum_bid}'`);
     logger.info(`Bid increment is: '${ledgerState.bid_increment}'`);
     logger.info(`Current bid is: '${ledgerState.current_bid}'`);
-    logger.info(`Current bidder is: '${ledgerState.current_bidder}'`);
+    logger.info(`Current bidder is: '${currentBidder}'`);
     logger.info(`Reserve price is: '${ledgerState.reserve_price}'`);
     logger.info(`Item seller is: '${toHex(ledgerState.item_seller)}'`);
     logger.info(`Item seller is: '${ledgerState.isSeller ? 'you' : 'not you'}'`);
