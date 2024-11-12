@@ -1,18 +1,3 @@
-/* Auction Smart Contract:
-    
-    The initial state of the contract will contain:
-        Public: A description of the item which is put on sale
-        Public: The minimal starting bid
-        Public: The last validated bid (empty)
-        Private: The reserve price defined by the seller at which the auction is automatically concluded when reached or surpassed
-    
-    The rules are:
-        The bidder should be over 18 and prove it with a JWT VC
-        The bid should be equal to or higher than the starting bid
-        The bid should be higher than the previous bid by at least 500$
-        The auction is automatically concluded/closed if the bid is equal to or higher than the reserve price
-*/
-
 include "std";
 
 export enum STATE { opened, concluded }
@@ -35,7 +20,8 @@ constructor(_item_description: Opaque<"string">, _minimum_bid: Uint<32>, _bid_in
     current_bidder = none<Bytes<32>>();
     item_description = _item_description;
     minimum_bid = _minimum_bid;    
-    // How can we keep this next one private???
+    bid_increment = _bid_increment;
+    // Q: How can we keep this next one private???
     reserve_price = _reserve_price;
     item_seller = public_key(local_secret_key());
 }
@@ -46,6 +32,11 @@ export circuit place_bid(new_bid: Uint<32>): Void {
     assert auction_state == STATE.opened
         "Attempted to bid on a concluded auction";
 
+    const bidder_pub_key = public_key(local_secret_key());
+
+    assert item_seller != bidder_pub_key
+        "Can't place a bid as the auction seller";
+
     if (current_bid.is_some) {
         assert new_bid >= (current_bid.value + bid_increment)
             "The bid should be equal to or greater than the 'current bid + bid increment'";
@@ -53,20 +44,17 @@ export circuit place_bid(new_bid: Uint<32>): Void {
         assert new_bid >= minimum_bid
             "The bid should be equal to or greater than the minimum bid";
     }
-
-    const bidder_pub_key = public_key(local_secret_key());
-
-    assert item_seller != bidder_pub_key
-        "Attempted to place a bid as the seller";
     
+    // Q: How will this be implemented actually??
     //assert birthDateFromVC >= 18
     //    "The bidder's age must be equal to or greater than 18"
 
     current_bid = some<Uint<32>>(new_bid);
     current_bidder = some<Bytes<32>>(bidder_pub_key);
 
-    if (new_bid >= reserve_price) // reservePrice should be private state!
-        auction_state == STATE.concluded;
+    // Q: How do we implement this knowing tht the reserve price should be private?
+    if (new_bid >= reserve_price)
+        auction_state = STATE.concluded;
 }
 
 export circuit conclude_auction(): Void {
@@ -79,11 +67,10 @@ export circuit conclude_auction(): Void {
     assert item_seller == public_key(local_secret_key())
         "Only the seller of the item can conclude the auction";
     
-    auction_state == STATE.concluded;
+    auction_state = STATE.concluded;
 }
 
 export circuit public_key(sk: Bytes<32>): Bytes<32> {
-    // TODO Each participant should have a private key
-    return persistent_hash<Vector<2, Bytes<32>>>([pad(32, "auction:seller:pk"), sk]);
+    return persistent_hash<Vector<2, Bytes<32>>>([pad(32, "auction:participant:pk"), sk]);
 }
 
